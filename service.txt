@@ -1,0 +1,107 @@
+To avoid creating an instance of the `AdminService` (or any other service) repeatedly in every controller function, a common and efficient approach is to use **dependency injection** or to instantiate the service at a higher level (like in middleware) and then pass it down as needed.
+
+### Solution 1: Instantiate Once and Reuse in Controller
+
+You can instantiate the `AdminService` once and reuse it across your controller functions, like this:
+
+#### Example:
+
+```ts
+// adminRoute.ts
+import { Router } from "express";
+import { adminLogin } from "../controllers/AdminController";
+import { AdminService } from "../services/AdminService";
+
+const router = Router();
+const adminService = new AdminService(); // Create the service once
+
+// Pass the service to the controller
+router.get('/', (req, res) => adminLogin(req, res, adminService));
+
+export default router;
+```
+
+Then modify your controller function to accept the service as a parameter:
+
+```ts
+// AdminController.ts
+import { Request, Response } from "express";
+import asyncHandler from "express-async-handler";
+import { AdminService } from "../services/AdminService";
+
+// Accept the AdminService as a parameter
+export const adminLogin = asyncHandler(async (req: Request, res: Response, adminService: AdminService) => {
+  const message = await adminService.getAdmin(); // Use the service passed from the route
+  res.send(message);
+});
+```
+
+### Solution 2: Dependency Injection Pattern
+
+In more sophisticated projects (or using frameworks like `InversifyJS`), you can use **dependency injection** to inject services into controllers automatically. This removes the need to manually instantiate services and manage dependencies.
+
+However, if you don't want to introduce a full dependency injection library, the simpler pattern from Solution 1 should work fine for many use cases.
+
+### Solution 3: Use Middleware to Attach the Service
+
+You can use middleware to instantiate the service once and attach it to the `req` object, which you can then access in your controller:
+
+#### Example:
+
+```ts
+// serviceMiddleware.ts
+import { Request, Response, NextFunction } from "express";
+import { AdminService } from "../services/AdminService";
+
+// Middleware to attach AdminService to the request object
+export const attachAdminService = (req: Request, res: Response, next: NextFunction) => {
+  req.adminService = new AdminService();
+  next();
+};
+
+// Extend Request interface to include adminService
+declare global {
+  namespace Express {
+    interface Request {
+      adminService?: AdminService;
+    }
+  }
+}
+```
+
+Then use the middleware in your route:
+
+```ts
+// adminRoute.ts
+import { Router } from "express";
+import { adminLogin } from "../controllers/AdminController";
+import { attachAdminService } from "../middleware/serviceMiddleware";
+
+const router = Router();
+
+router.get('/', attachAdminService, adminLogin);
+
+export default router;
+```
+
+Now your controller can access `req.adminService`:
+
+```ts
+// AdminController.ts
+import { Request, Response } from "express";
+import asyncHandler from "express-async-handler";
+
+export const adminLogin = asyncHandler(async (req: Request, res: Response) => {
+  const adminService = req.adminService;
+  const message = await adminService!.getAdmin(); // Access adminService from the request
+  res.send(message);
+});
+```
+
+### Which Approach Is Best?
+
+1. **Solution 1** (passing the service via route) is simple and works well for small to medium projects without needing extra setup.
+2. **Solution 3** (middleware) is cleaner and makes the service accessible across multiple controllers, but requires more configuration.
+3. **Dependency Injection** frameworks (like `InversifyJS`) are best suited for larger projects or teams where managing dependencies and services centrally is more important.
+
+For a simple TypeScript + Express setup, **Solution 1** or **Solution 3** should be sufficient, depending on your preference. Solution 3 (middleware) tends to be more scalable and maintainable.
